@@ -115,7 +115,7 @@ def to_sentiment(star_rating):
 ################################################### Create or load Feature Group ###############################################################
 ################################################################################################################################################
 
-def create_of_load_feature_group(prefix, feature_group_name):
+def create_or_load_feature_group(prefix, feature_group_name):
     feature_defination = [
         FeatureDefinition(feature_name="review_id", feature_type=FeatureTypeEnum.STRING),
         FeatureDefinition(feature_name="date", feature_type=FeatureTypeEnum.STRING),
@@ -288,7 +288,153 @@ def _preprocess_file(file,
     # balance the dataset by sentiment down to the minority class
     if balance_dataset:
         df_unbalanced_group_by = df.groupby('sentiment')
+        # here apply will work groupby object and apply the function to each group
         df_balanced = df_unbalanced_group_by.apply(lambda x: x.sample(df_unbalanced_group_by.size().min()).reset_index(drop=True))
+        print(df_balanced['sentiment'].head())
+        df = df_balanced
+
+    # adding timestamp as date column
+    timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+    print(timestamp)
+
+    df['date'] = timestamp
+    print('Shape of df with date: {}'.format(df.shape))
+
+    # split dataset
+    print('Shape of dataframe before splitting {}'.format(df.shape))
+
+    print('train split percentage {}'.format(args.train_split_percentage))
+    print('validation split percentage {}'.format(args.validation_split_percentage))
+    print('test split percentage {}'.format(args.test_split_percentage))
+
+    holdout_percentage = 1.00 - args.train_split_percentage
+    print('holdout percentage {}'.format(holdout_percentage))
+    df_train, df_holdout = train_test_split(df,
+                                            test_size=holdout_percentage,
+                                            stratify=df['sentiment'])
+    test_holdout_percentage = args.test_split_percentage / holdout_percentage
+    print('test holdout percentage {}'.format(test_holdout_percentage))
+
+    df_validation, df_test = train_test_split(df_holdout,
+                                              test_size=test_holdout_percentage,
+                                              stratify=df_holdout['sentiment'])
+
+    df_train = df_train.reset_index(drop=True)
+    df_validation = df_validation.reset_index(drop=True)
+    df_test = df_test.reset_index(drop=True)
+
+    print('Shape of train dataframe {}'.format(df_train.shape))
+    print('Shape of validation dataframe {}'.format(df_validation.shape))
+    print('Shape of test dataframe {}'.format(df_test.shape))
+
+    train_data = '{}/sentiment/train'.format(args.output_data)
+    validation_data = '{}/sentiment/validation'.format(args.output_data)
+    test_data = '{}/sentiment/test'.format(args.output_data)
+
+    ## write TSV Files
+    df_train.to_csv('{}/part-{}-{}.tsv'.format(train_data, args.current_host, filename_without_extension), sep='\t', index=False)
+    df_validation.to_csv('{}/part-{}-{}.tsv'.format(validation_data, args.current_host, filename_without_extension), sep='\t', index=False)
+    df_test.to_csv('{}/part-{}-{}.tsv'.format(test_data, args.current_host, filename_without_extension), sep='\t', index=False)
+
+    # dataframe
+    df_train.head()
+    df_validation.head()
+    df_test.head()
+
+    column_names = ['review_id', 'sentiment', 'date', 'label_id', 'input_ids', 'review_body']
+
+    df_train_records = df_train[column_names]
+    df_train_records['split_type'] = 'train'
+    df_train_records.head()
+
+
+    df_validation_records = df_validation[column_names]
+    df_validation_records['split_type'] = 'validation'
+    df_validation_records.head()
+
+    df_test_records = df_test[column_names]
+    df_test_records['split_type'] = 'test'
+    df_test_records.head()
+
+    df_fs_train_records =  cast_object_to_string(df_train_records)
+    df_fs_validation_records =  cast_object_to_string(df_validation_records)
+    df_fs_test_records = cast_object_to_string(df_test_records)
+
+    print('Ingesting features...')
+    feature_group.ingest(
+        data_frame=df_fs_train_records,
+        max_workers=3,
+        wait=True,
+    )
+    feature_group.ingest(
+        data_frame=df_fs_validation_records,
+        max_workers=3,
+        wait=True,
+    )
+    feature_group.ingest(
+        data_frame=df_fs_test_records,
+        max_workers=3,
+        wait=True,
+    )
+
+    offline_store_status = None
+    while offline_store_status != 'Active':
+        try:
+            offline_store_status = feature_group.describe().get('OfflineStoreStatus')
+
+        except:
+            pass
+        print('Offline store status: {}'.format(offline_store_status))
+        time.sleep(5)
+    print('...features ingested!')
+
+    def process(args):
+        print('Current host: {}'.format(args.current_host))
+        feature_group = create_or_load_feature_group(prefix=args.feature_store_offline_prefix,
+                                                     feature_group_name=args.feature_group_name)
+        feature_group.describe()
+        preprocessed_data = '{}/sentiment'.format(args.output_data)
+        train_data = '{}/sentiment/train'.format(args.output_data)
+        validation_data = '{}/sentiment/validation'.format(args.output_data)
+        test_data = '{}/sentiment/test'.format(args.output_data)
+        # partial functions allow to derive a function with some parameters to a function with fewer parameters
+        # and fixed values set for the more limited function
+        # here 'preprocess_file' will be more limited function than '_preprocess_file' with fixed values for some parameters
+        preprocess_file = functools.partial(_preprocess_file,
+                                            balance_dataset=args.balance_dataset,
+                                            max_seq_length=args.max_seq_length,
+                                            prefix=args.feature_store_offline_prefix,
+                                            feature_group_name=args.feature_group_name)
+        # find files recursively
+        input_files = glob.glob('{}/*.csv'.format(args.input_data))
+
+        num_cpus = multiprocessing.cpu_count()
+        print('Number of CPUs: {}'.format(num_cpus))
+
+        p = multiprocessing.Pool(num_cpus)
+        p.map(preprocess_file, input_files)
+
+        print('Listing contents of {}'.format(preprocessed_data))
+        dirs_output = os.listdir(preprocessed_data)
+        for file in dirs_output:
+            print(file)
+
+        print('Listing contents of {}'.format(train_data))
+        dirs_output = os.listdir(train_data)
+        for file in dirs_output:
+            print(file)
+
+        print('Listing contents of {}'.format(validation_data))
+        dirs_output = os.listdir(validation_data)
+        for file in dirs_output:
+            print(file)
+
+        print('Listing contents of {}'.format(test_data))
+        dirs_output = os.listdir(test_data)
+        for file in dirs_output:
+            print(file)
+
+        print('Complete')
 
 ################################################################################################################################################
 #################################################################### Main ######################################################################
