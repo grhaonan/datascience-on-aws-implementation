@@ -35,7 +35,6 @@ from sagemaker.feature_store.feature_definition import (
     FeatureTypeEnum,
 )
 
-
 ################################################################################################################################################
 ###################################################### Setup environmental variables ###########################################################
 ################################################################################################################################################
@@ -43,7 +42,8 @@ from sagemaker.feature_store.feature_definition import (
 region = os.environ['AWS_DEFAULT_REGION']
 sts = boto3.Session(region_name=region).client(service_name='sts', region_name=region)
 iam = boto3.Session(region_name=region).client(service_name='iam', region_name=region)
-featurestore_runtime = boto3.Session(region_name=region).client(service_name='sagemaker-featurestore-runtime', region_name=region)
+featurestore_runtime = boto3.Session(region_name=region).client(service_name='sagemaker-featurestore-runtime',
+                                                                region_name=region)
 sm = boto3.Session(region_name=region).client(service_name='sagemaker', region_name=region)
 
 caller_identity = sts.get_caller_identity()
@@ -72,6 +72,7 @@ PRE_TRAINED_MODEL_NAME = 'roberta-base'
 
 # create the tokenizer to use based on pre trained model
 tokenizer = RobertaTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
+
 
 ################################################################################################################################################
 ################################################################# Tools ########################################################################
@@ -103,6 +104,7 @@ def wait_for_feature_group_creation_complete(feature_group):
 def list_arg(raw_value):
     return raw_value.split(',')
 
+
 def to_sentiment(star_rating):
     if star_rating in (1, 2):
         return -1
@@ -111,12 +113,13 @@ def to_sentiment(star_rating):
     if star_rating in (4, 5):
         return 1
 
+
 ################################################################################################################################################
 ################################################### Create or load Feature Group ###############################################################
 ################################################################################################################################################
 
 def create_or_load_feature_group(prefix, feature_group_name):
-    feature_defination = [
+    feature_definition = [
         FeatureDefinition(feature_name="review_id", feature_type=FeatureTypeEnum.STRING),
         FeatureDefinition(feature_name="date", feature_type=FeatureTypeEnum.STRING),
         FeatureDefinition(feature_name="sentiment", feature_type=FeatureTypeEnum.STRING),
@@ -126,45 +129,45 @@ def create_or_load_feature_group(prefix, feature_group_name):
         FeatureDefinition(feature_name='split_type', feature_type=FeatureTypeEnum.STRING)
     ]
 
-# setup the Feature Group
-feture_group = FeatureGroup(
-    name=feature_group_name,
-    feture_definition=feture_definition,
-    sagemaker_session=sagemaker_session,
-)
-
-print('Feature Group: {}'.format(feature_group))
-
-try:
-    print('Waiting for existing Feature Group to become available if it is being created by another instance in our cluster...')
-    wait_for_feature_group_creation_complete(feature_group)
-except Exception as e:
-    print('Before CREATE FG wait exeption: {}'.format(e))
-
-
-try:
-    record_identifier_feature_name = 'review_id'
-    event_time_feature_name = 'date'
-    feature_group.create(
-        s3_uri=f"s3://{bucket}/{prefix}",
-        record_identifier_name=record_identifier_feature_name,
-        event_time_feature_name=event_time_feature_name,
-        role_arn=role,
-        enable_online_store=False
+    # setup the Feature Group
+    feature_group = FeatureGroup(
+        name=feature_group_name,
+        feture_definition=feature_definition,
+        sagemaker_session=sagemaker_session,
     )
-    print('Creating Feature Group. Completed.')
 
-    print('Waiting for new Feature Group to become available...')
-    wait_for_feature_group_creation_complete(feature_group)
-    print('Feature Group available.')
-    feture_group.describe()
+    print('Feature Group: {}'.format(feature_group))
 
-except Exception as e:
-    print('Exception: {}'.format(e))
-    print('Creating Feature Group with role {}...'.format(role))
+    try:
+        print(
+            'Waiting for existing Feature Group to become available if it is being created by another instance in our cluster...')
+        wait_for_feature_group_creation_complete(feature_group)
+    except Exception as e:
+        print('Before CREATE FG wait exeption: {}'.format(e))
 
+    try:
+        record_identifier_feature_name = 'review_id'
+        event_time_feature_name = 'date'
+        # offline feature store is in S3 bucket
+        feature_group.create(
+            s3_uri=f"s3://{bucket}/{prefix}",
+            record_identifier_name=record_identifier_feature_name,
+            event_time_feature_name=event_time_feature_name,
+            role_arn=role,
+            enable_online_store=False
+        )
+        print('Creating Feature Group. Completed.')
 
-return feature_group
+        print('Waiting for new Feature Group to become available...')
+        wait_for_feature_group_creation_complete(feature_group)
+        print('Feature Group available.')
+        feature_group.describe()
+
+    except Exception as e:
+        print('Exception: {}'.format(e))
+        print('Creating Feature Group with role {}...'.format(role))
+
+    return feature_group
 
 
 ################################################################################################################################################
@@ -184,7 +187,6 @@ def convert_to_bert_input_ids(review, max_seq_len):
     return encoded_review['input_ids'].flatten().tolist()
 
 
-
 ################################################################################################################################################
 ###################################################### Parse input arguments ###################################################################
 ################################################################################################################################################
@@ -196,9 +198,10 @@ def parse_args():
             resconfig = json.load(cfgfile)
     except FileNotFoundError:
         print('/opt/ml/config/resourceconfig.json not found. current_host is unknown.')
-        pass # Ignore
+        pass  # Ignore
 
     # Local testing with CLI args
+    # Parser for command-line options
     parser = argparse.ArgumentParser(description='Process')
 
     parser.add_argument('--hosts', type=list_arg,
@@ -258,7 +261,7 @@ def _preprocess_file(file,
     # the Feature Group that was set in the main notebook cannot be passed here - it will be used later in the notebook for other purposes
     # you need to create a Feature Group with the same Feature Definitions within the processing job
 
-    feature_group = create_of_load_feature_group(prefix, feature_group_name)
+    feature_group = create_or_load_feature_group(prefix, feature_group_name)
     # Note that if your file has multiple extensions, .stem will only remove the last extension
     filename_without_extension = Path(Path(file).stem).stem
 
@@ -268,7 +271,7 @@ def _preprocess_file(file,
     df = df.reset_index(drop=True)
     print('Shape of dataframe {}'.format(df.shape))
 
-    df['Sentiment'] = df['Rating'].apply(lambda star_rating: to_sentiment(star_rating = star_rating))
+    df['Sentiment'] = df['Rating'].apply(lambda star_rating: to_sentiment(star_rating=star_rating))
     print('Shape of dataframe with sentiment {}'.format(df.shape))
 
     df['label_id'] = df['Sentiment'].apply(lambda sentiment: classes_map[sentiment])
@@ -278,8 +281,8 @@ def _preprocess_file(file,
 
     # convert the index into a review_id
     df.reset_index(inplace=True)
-    df = df.renae(columns = {'index': 'review_id',
-                             'Review Text': 'review_body'})
+    df = df.renae(columns={'index': 'review_id',
+                           'Review Text': 'review_body'})
     # drop all columns except the following:
     df = df[['review_id', 'sentiment', 'label_id', 'input_ids', 'review_body']]
     df = df.reset_index(drop=True)
@@ -289,7 +292,8 @@ def _preprocess_file(file,
     if balance_dataset:
         df_unbalanced_group_by = df.groupby('sentiment')
         # here apply will work groupby object and apply the function to each group
-        df_balanced = df_unbalanced_group_by.apply(lambda x: x.sample(df_unbalanced_group_by.size().min()).reset_index(drop=True))
+        df_balanced = df_unbalanced_group_by.apply(
+            lambda x: x.sample(df_unbalanced_group_by.size().min()).reset_index(drop=True))
         print(df_balanced['sentiment'].head())
         df = df_balanced
 
@@ -332,9 +336,12 @@ def _preprocess_file(file,
     test_data = '{}/sentiment/test'.format(args.output_data)
 
     ## write TSV Files
-    df_train.to_csv('{}/part-{}-{}.tsv'.format(train_data, args.current_host, filename_without_extension), sep='\t', index=False)
-    df_validation.to_csv('{}/part-{}-{}.tsv'.format(validation_data, args.current_host, filename_without_extension), sep='\t', index=False)
-    df_test.to_csv('{}/part-{}-{}.tsv'.format(test_data, args.current_host, filename_without_extension), sep='\t', index=False)
+    df_train.to_csv('{}/part-{}-{}.tsv'.format(train_data, args.current_host, filename_without_extension), sep='\t',
+                    index=False)
+    df_validation.to_csv('{}/part-{}-{}.tsv'.format(validation_data, args.current_host, filename_without_extension),
+                         sep='\t', index=False)
+    df_test.to_csv('{}/part-{}-{}.tsv'.format(test_data, args.current_host, filename_without_extension), sep='\t',
+                   index=False)
 
     # dataframe
     df_train.head()
@@ -347,7 +354,6 @@ def _preprocess_file(file,
     df_train_records['split_type'] = 'train'
     df_train_records.head()
 
-
     df_validation_records = df_validation[column_names]
     df_validation_records['split_type'] = 'validation'
     df_validation_records.head()
@@ -356,8 +362,8 @@ def _preprocess_file(file,
     df_test_records['split_type'] = 'test'
     df_test_records.head()
 
-    df_fs_train_records =  cast_object_to_string(df_train_records)
-    df_fs_validation_records =  cast_object_to_string(df_validation_records)
+    df_fs_train_records = cast_object_to_string(df_train_records)
+    df_fs_validation_records = cast_object_to_string(df_validation_records)
     df_fs_test_records = cast_object_to_string(df_test_records)
 
     print('Ingesting features...')
@@ -388,53 +394,57 @@ def _preprocess_file(file,
         time.sleep(5)
     print('...features ingested!')
 
-    def process(args):
-        print('Current host: {}'.format(args.current_host))
-        feature_group = create_or_load_feature_group(prefix=args.feature_store_offline_prefix,
-                                                     feature_group_name=args.feature_group_name)
-        feature_group.describe()
-        preprocessed_data = '{}/sentiment'.format(args.output_data)
-        train_data = '{}/sentiment/train'.format(args.output_data)
-        validation_data = '{}/sentiment/validation'.format(args.output_data)
-        test_data = '{}/sentiment/test'.format(args.output_data)
-        # partial functions allow to derive a function with some parameters to a function with fewer parameters
-        # and fixed values set for the more limited function
-        # here 'preprocess_file' will be more limited function than '_preprocess_file' with fixed values for some parameters
-        preprocess_file = functools.partial(_preprocess_file,
-                                            balance_dataset=args.balance_dataset,
-                                            max_seq_length=args.max_seq_length,
-                                            prefix=args.feature_store_offline_prefix,
-                                            feature_group_name=args.feature_group_name)
-        # find files recursively
-        input_files = glob.glob('{}/*.csv'.format(args.input_data))
 
-        num_cpus = multiprocessing.cpu_count()
-        print('Number of CPUs: {}'.format(num_cpus))
+def process(args):
+    print('Current host: {}'.format(args.current_host))
+    feature_group = create_or_load_feature_group(prefix=args.feature_store_offline_prefix,
+                                                 feature_group_name=args.feature_group_name)
+    feature_group.describe()
+    preprocessed_data = '{}/sentiment'.format(args.output_data)
+    train_data = '{}/sentiment/train'.format(args.output_data)
+    validation_data = '{}/sentiment/validation'.format(args.output_data)
+    test_data = '{}/sentiment/test'.format(args.output_data)
+    # partial functions allow to derive a function with some parameters to a function with fewer parameters
+    # and fixed values set for the more limited function
+    # here 'preprocess_file' will be more limited function than '_preprocess_file' with fixed values for some parameters
+    preprocess_file = functools.partial(_preprocess_file,
+                                        balance_dataset=args.balance_dataset,
+                                        max_seq_length=args.max_seq_length,
+                                        prefix=args.feature_store_offline_prefix,
+                                        feature_group_name=args.feature_group_name)
+    # find files recursively
+    input_files = glob.glob('{}/*.csv'.format(args.input_data))
 
-        p = multiprocessing.Pool(num_cpus)
-        p.map(preprocess_file, input_files)
+    num_cpus = multiprocessing.cpu_count()
+    print('Number of CPUs: {}'.format(num_cpus))
 
-        print('Listing contents of {}'.format(preprocessed_data))
-        dirs_output = os.listdir(preprocessed_data)
-        for file in dirs_output:
-            print(file)
+    # multiprocessing is built-in package
+    # one alternative is concurrent.futures
+    # This is a valuable point, to use multiprocessing to handel multiple independent files
+    p = multiprocessing.Pool(num_cpus)
+    p.map(preprocess_file, input_files)
 
-        print('Listing contents of {}'.format(train_data))
-        dirs_output = os.listdir(train_data)
-        for file in dirs_output:
-            print(file)
+    print('Listing contents of {}'.format(preprocessed_data))
+    dirs_output = os.listdir(preprocessed_data)
+    for file in dirs_output:
+        print(file)
 
-        print('Listing contents of {}'.format(validation_data))
-        dirs_output = os.listdir(validation_data)
-        for file in dirs_output:
-            print(file)
+    print('Listing contents of {}'.format(train_data))
+    dirs_output = os.listdir(train_data)
+    for file in dirs_output:
+        print(file)
 
-        print('Listing contents of {}'.format(test_data))
-        dirs_output = os.listdir(test_data)
-        for file in dirs_output:
-            print(file)
+    print('Listing contents of {}'.format(validation_data))
+    dirs_output = os.listdir(validation_data)
+    for file in dirs_output:
+        print(file)
 
-        print('Complete')
+    print('Listing contents of {}'.format(test_data))
+    dirs_output = os.listdir(test_data)
+    for file in dirs_output:
+        print(file)
+
+    print('Complete')
 
 ################################################################################################################################################
 #################################################################### Main ######################################################################
@@ -443,4 +453,10 @@ def _preprocess_file(file,
 
 if __name__ == "__main__":
     args = parse_args()
+    print('Loaded arguments')
+    print(args)
 
+    print('Environment variables:')
+    print(os.environ)
+
+    process(args)
