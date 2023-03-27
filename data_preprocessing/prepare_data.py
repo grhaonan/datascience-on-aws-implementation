@@ -20,12 +20,15 @@ from pathlib import Path
 import time
 import boto3
 
-subprocess.check_call([sys.executable, "-m", "conda", "install", "-c", "pytorch", "pytorch==1.6.0", "-y"])
+# disable subprocess check for now
+# subprocess.check_call([sys.executable, "-m", "conda", "install", "-c", "pytorch", "pytorch==1.6.0", "-y"])
 
-subprocess.check_call([sys.executable, "-m", "conda", "install", "-c", "conda-forge", "transformers==3.5.1", "-y"])
+# disable subprocess check for now
+# subprocess.check_call([sys.executable, "-m", "conda", "install", "-c", "conda-forge", "transformers==3.5.1", "-y"])
 from transformers import RobertaTokenizer
 
-subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'sagemaker==2.35.0'])
+# disable subprocess check for now
+# subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'sagemaker==2.35.0'])
 import sagemaker
 
 from sagemaker.session import Session
