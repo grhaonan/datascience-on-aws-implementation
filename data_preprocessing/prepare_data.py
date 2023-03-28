@@ -1,5 +1,4 @@
 from sklearn.model_selection import train_test_split
-from sklearn.utils import resample
 import functools
 import multiprocessing
 
@@ -20,15 +19,16 @@ from pathlib import Path
 import time
 import boto3
 
-# disable subprocess check for now
-# subprocess.check_call([sys.executable, "-m", "conda", "install", "-c", "pytorch", "pytorch==1.6.0", "-y"])
+subprocess.check_call([sys.executable, "-m", "conda", "install", "-c", "pytorch", "pytorch==1.6.0", "-y"])
 
-# disable subprocess check for now
-# subprocess.check_call([sys.executable, "-m", "conda", "install", "-c", "conda-forge", "transformers==3.5.1", "-y"])
+
+subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'sagemaker==2.135.0'])
+
+
+subprocess.check_call([sys.executable, "-m", "conda", "install", "-c", "conda-forge", "transformers==3.5.1", "-y"])
 from transformers import RobertaTokenizer
 
-# disable subprocess check for now
-# subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'sagemaker==2.35.0'])
+
 import sagemaker
 
 from sagemaker.session import Session
@@ -135,7 +135,7 @@ def create_or_load_feature_group(prefix, feature_group_name):
     # setup the Feature Group
     feature_group = FeatureGroup(
         name=feature_group_name,
-        feture_definition=feature_definition,
+        feature_definition=feature_definition,
         sagemaker_session=sagemaker_session,
     )
 
