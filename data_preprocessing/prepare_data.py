@@ -91,12 +91,12 @@ def cast_object_to_string(data_frame):
 
 def wait_for_feature_group_creation_complete(feature_group):
     try:
-        status = feature_group.description().get("FeatureGroupStatus")
+        status = feature_group.describe().get("FeatureGroupStatus")
         print('Feature Group status: {}'.format(status))
         while status == "Creating":
             print('Waiting for Feature Group to be Created')
             time.sleep(10)
-            status = feature_group.description().get("FeatureGroupStatus")
+            status = feature_group.describe().get("FeatureGroupStatus")
             print('Feature Group status: {}'.format(status))
         if status != "Created":
             raise RuntimeError("Error creating Feature Group")
@@ -122,7 +122,7 @@ def to_sentiment(star_rating):
 ################################################################################################################################################
 
 def create_or_load_feature_group(prefix, feature_group_name):
-    feature_definition = [
+    feature_definitions = [
         FeatureDefinition(feature_name="review_id", feature_type=FeatureTypeEnum.STRING),
         FeatureDefinition(feature_name="date", feature_type=FeatureTypeEnum.STRING),
         FeatureDefinition(feature_name="sentiment", feature_type=FeatureTypeEnum.STRING),
@@ -135,7 +135,7 @@ def create_or_load_feature_group(prefix, feature_group_name):
     # setup the Feature Group
     feature_group = FeatureGroup(
         name=feature_group_name,
-        feature_definition=feature_definition,
+        feature_definitions=feature_definitions,
         sagemaker_session=sagemaker_session,
     )
 
@@ -271,21 +271,22 @@ def _preprocess_file(file,
     df = pd.read_csv(file, index_col=0)
 
     df.isna().values.any()
+    df = df.dropna()
     df = df.reset_index(drop=True)
     print('Shape of dataframe {}'.format(df.shape))
 
-    df['Sentiment'] = df['Rating'].apply(lambda star_rating: to_sentiment(star_rating=star_rating))
+    df['sentiment'] = df['Rating'].apply(lambda star_rating: to_sentiment(star_rating=star_rating))
     print('Shape of dataframe with sentiment {}'.format(df.shape))
 
-    df['label_id'] = df['Sentiment'].apply(lambda sentiment: classes_map[sentiment])
+    df['label_id'] = df['sentiment'].apply(lambda sentiment: classes_map[sentiment])
 
     df['input_ids'] = df['Review Text'].apply(lambda review: convert_to_bert_input_ids(review, max_seq_length))
     print('df[input_ids] after calling convert_to_bert_input_ids: {}'.format(df['input_ids']))
 
     # convert the index into a review_id
     df.reset_index(inplace=True)
-    df = df.renae(columns={'index': 'review_id',
-                           'Review Text': 'review_body'})
+    df = df.rename(columns={'index': 'review_id',
+                            'Review Text': 'review_body'})
     # drop all columns except the following:
     df = df[['review_id', 'sentiment', 'label_id', 'input_ids', 'review_body']]
     df = df.reset_index(drop=True)
@@ -389,7 +390,7 @@ def _preprocess_file(file,
     offline_store_status = None
     while offline_store_status != 'Active':
         try:
-            offline_store_status = feature_group.describe().get('OfflineStoreStatus')
+            offline_store_status = feature_group.describe()['OfflineStoreStatus']['Status']
 
         except:
             pass
@@ -463,3 +464,4 @@ if __name__ == "__main__":
     print(os.environ)
 
     process(args)
+
