@@ -149,6 +149,109 @@ PRE_TRAINED_MODEL_NAME = 'roberta-base'
 
 
 
+def create_list_input_files(path):
+    input_files = glob.glob('{}/*.tsv'.format(path))
+    print(input_files)
+    return input_files
+
+
+def save_transformer_model(model, model_dir):
+    path = '{}/transformer'.format(model_dir, exist_ok=True)
+    os.makedirs(path, exist_ok=True)
+    print('Saving model to: {}'.format(path))
+    model.save_pretrained(path)
+
+def save_pytorch_model(model, model_dir):
+    os.makedirs(model_dir, exist_ok=True)
+    print('Saving model to: {}'.format(model_dir))
+    save_path = os.path.join(model_dir, MODEL_NAME)
+    # There are more than one approach to save a PyTorch model and below is the suggested one:
+    torch.save(model.state_dict(), save_path)
+
+
+################################################################################################################################################
+########################################################### Configure the model ################################################################
+################################################################################################################################################
+
+def configure_model():
+    classes = [-1, 0, 1]
+
+    config = RobertaConfig.from_pretrained(
+        PRE_TRAINED_MODEL_NAME,
+        num_labels=len(classes),
+        id2label={
+            0: -1,
+            1: 0,
+            2: 1
+        },
+        label2id ={
+            -1: 0,
+            0: 1,
+            1: 2
+        }
+    )
+    config.output_attentions = True
+    return config
+
+################################################################################################################################################
+####################################################### PyTorch Dataset and DataLoader #########################################################
+################################################################################################################################################
+# PyTorch dataset retrieves the dataset’s features and labels one sample at a time
+# Create a custom Dataset class for the reviews
+
+class ReviewDataset(Dataset):
+
+    def __init__(self, input_ids_list, label_id_list):
+        self.input_ids_list = input_ids_list
+        self.label_id_list = label_id_list
+
+    def __len__(self):
+        return len(self.label_id_list)
+
+    def __getitem__(self, item):
+        input_ids = json.loads(self.label_id_list[item])
+        label_id = self.label_id_list[item]
+
+        input_ids_tensor = torch.LongTensor(input_ids)
+        label_id_tensor = torch.tensor(label_id, dtype=torch.long)
+
+        return input_ids_tensor, label_id_tensor
+
+# PyTorch DataLoader helps to to organise the input training data in “minibatches” and reshuffle the data at every epoch
+# It takes Dataset as an input
+
+def create_data_loader(path, batch_size):
+    print("Get data loader")
+
+    df = pd.DataFrame(columns=['inputs_ids', 'label_id'])
+
+    input_files = create_list_input_files(path)
+
+    for file in input_files:
+        df_temp = pd.read_csv(file,
+                              sep='\t',
+                              usecols=['inputs_ids', 'label_id'])
+        df = df.append(df_temp)
+
+    ds = ReviewDataset(
+        input_ids_list=df.inputs_ids.to_numpy(),
+        label_id_list=df.label_id.to_numpy()
+    )
+
+    return DataLoader(
+            ds,
+            batch_size=batch_size,
+            shuffle=True,
+            drop_last=True,
+    ), df
+
+
+
+################################################################################################################################################
+################################################################ Train model ###################################################################
+################################################################################################################################################
+
+
 
 ################################################################################################################################################
 #################################################################### Main ######################################################################
