@@ -252,19 +252,93 @@ def create_data_loader(path, batch_size):
 ################################################################################################################################################
 
 
-def train_model(
+def train_model(model,
+                train_data_loader,
+                df_train,
+                validation_data_loader,
+                df_val,
+                args):
 
-):
-    pass
+    loss_function = nn.CrossEntropyLoss()
+    # it has to be a torch model
+    optimiser = optim.Adam(params=model.parameters(), lr=args.learning_rate)
+    if args.freeze_bert_laryer:
+        print('Freezing BERT base layers...')
+        for name, param in model.named_parameters():
+            # If requires_grad is set to false, you are freezing the part of the model as no changes happen to its parameters
+            if 'classifier' not in name:
+                param.requires_grad = False
+        print('Set classifier layers to `param.requires_grad=False`.')
 
+    train_correct = 0
+    train_total = 0
 
-################################################################################################################################################
+    for epoch in range(args.epochs):
+        print('EPOCH -- {}'.format(epoch))
+
+        for i, (sent, label) in enumerate(train_data_loader):
+            if i < args.train_steps_per_epoch:
+                model.train()
+                optimiser.zero_grad()
+                # squeeze(0) will squeeze the tensor to remove only the first dimension of size 1
+                # squeeze() will squeeze all dimension of size 1
+                sent = sent.squeeze(0)
+                if torch.cuda.is_available():
+                    sent = sent.cuda()
+                    label = label.cuda()
+                output = model(sent)[0]
+                _, predicted = torch.max(output, 1)
+
+                loss = loss_function(output, label)
+                loss.backward()
+                optimiser.step()
+
+                if args.run_validation and i % args.validation_stemps == 0:
+                    print('RUNNING VALIDATION:')
+                    correct = 0
+                    total = 0
+                    # When a model is in evaluation mode, certain layers and behaviors are changed to optimize the model for evaluation rather than training.
+                    # For example, dropout layers will stop dropping out units, and batch normalization layers will use their running mean
+                    # and variance statistics instead of computing them on the input batch.
+                    model.eval()
+
+                    for sent, label in validation_data_loader:
+                        sent = sent.squeeze(0)
+                        if torch.cuda.is_available():
+                            # move to GPU memory
+                            sent = sent.cuda()
+                            label = label.cuda()
+                        output = model(sent)[0]
+                        _, predicted = torch.max(output, 1)
+
+                        total += label.size(0)
+                        correct += (predicted == label).sum().item()
+                        accuracy = 100.00 * correct.numpy() / total
+                        print('[epoch/step: {0}/{1}] val_loss: {2:.2f} - val_acc: {3:.2f}%'.format(epoch, i, loss.item(), accuracy))
+            else:
+                break
+    print('TRAINING COMPLETED.')
+    return model
+
+    ################################################################################################################################################
 #################################################################### Main ######################################################################
 ################################################################################################################################################
 
 if __name__ == '__main__':
 
+    # Parse args
+
     args = parse_args()
+    print('Loaded arguments:')
+    print(args)
+
+    # Get environment variables
+
+    env_var = os.environ
+    print('Environment variables:')
+    pprint.pprint(dict(env_var), width = 1)
+
+
 
 
 
