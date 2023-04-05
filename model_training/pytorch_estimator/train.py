@@ -333,10 +333,118 @@ if __name__ == '__main__':
     print(args)
 
     # Get environment variables
-
     env_var = os.environ
     print('Environment variables:')
     pprint.pprint(dict(env_var), width = 1)
+
+    # Check if distributed training
+    is_distributed = len(args.hosts) > 1 and args.backend is not None
+
+    print("Distributed training - {}".format(is_distributed))
+    use_cuda = args.num_gpus > 0
+    kwargs = {'num_workders': 1, 'pin_memory': True} if use_cuda else {}
+
+    device = torch.device("cuda" if use_cuda else "cpu")
+    # Initialize the distributed environment.
+
+    if is_distributed:
+        world_size = len(args.hosts)
+        os.environ['WORLD_SIZE'] = str(world_size)
+        host_rank = args.hosts.index(args.current_host)
+        os.environ['RANK'] = str(host_rank)
+        dist.init_process_group(backend=args.backend, rank=host_rank, world_size=world_size)
+        print('Initialized the distributed environment: \'{}\' backend on {} nodes. '.format(
+            args.backend, dist.get_world_size()) + 'Current host rank is {}. Number of gpus: {}'.format(
+            dist.get_rank(), args.num_gpus))
+
+        # Set the seed for generating random numbers
+        torch.manual_seed(args.seed)
+        if use_cuda:
+            torch.cuda.manual_seed(args.seed)
+
+        # Instantiate model
+        config = None
+        model = None
+
+        successful_download = False
+        retries = 0
+
+    while (retries < 5 and not successful_download):
+        try:
+            # Configure model
+            config = configure_model()
+            model = RobertaForSequenceClassification.from_pretrained(
+                'roberta-base',
+                config=config
+            )
+            # pre-trained model was by GPU
+            model.to(device)
+            successful_download = True
+            print('Sucessfully downloaded after {} retries.'.format(retries))
+
+        except:
+            retries += 1
+            random_sleep = random.randit(1, 30)
+            print('Retry #{}.  Sleeping for {} seconds'.format(retries, random_sleep))
+            time.sleep(random_sleep)
+
+    if not model:
+        print('Not properly initialised')
+
+
+    # Create data loaders
+    train_data_loader, df_train = create_data_loader(args.train_data_path, args.batch_size)
+    val_data_loader, df_val = create_data_loader(args.validation_data_path, args.batch_size)
+
+    print("Processes {}/{} ({:.0f}%) of train data".format(
+        len(train_data_loader.sampler), len(train_data_loader.dataset),
+        100. * len(train_data_loader.sampler) / len(train_data_loader.dataset)
+    ))
+
+    print("Processes {}/{} ({:.0f}%) of validation data".format(
+        len(val_data_loader.sampler), len(val_data_loader.dataset),
+        100. * len(val_data_loader.sampler) / len(val_data_loader.dataset)
+    ))
+
+    print('model_dir: {}'.format(args.model_dir))
+    print('model summary: {}'.format(model))
+
+    print('model_dir: {}'.format(args.model_dir))
+    print('model summary: {}'.format(model))
+
+    callbacks = []
+    initial_epoch_number = 0
+
+    # Start training
+    model = train_model(
+        model,
+        train_data_loader,
+        df_train,
+        val_data_loader,
+        df_val,
+        args
+    )
+
+    save_transformer_model(model, args.model_dir)
+    save_pytorch_model(model, args.model_dir)
+
+    # Prepare for inference which will be used in deployment
+    # You will need three files for it: inference.py, requirements.txt, config.json
+
+    inference_path  = os.path.join(args.model_dir, "code/")
+    os.makedirs(inference_path, exist_ok=True)
+    os.system("cp inference.py {}".format(inference_path))
+    os.system("cp requirements.txt {}".format(inference_path))
+    os.system("cp config.json {}".format(inference_path))
+
+
+
+
+
+
+
+
+
 
 
 
