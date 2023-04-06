@@ -293,7 +293,7 @@ def train_model(model,
                 loss.backward()
                 optimiser.step()
 
-                if args.run_validation and i % args.validation_stemps == 0:
+                if args.run_validation and i % args.validation_steps_per_epoch == 0:
                     print('RUNNING VALIDATION:')
                     correct = 0
                     total = 0
@@ -335,7 +335,7 @@ if __name__ == '__main__':
     # Get environment variables
     env_var = os.environ
     print('Environment variables:')
-    pprint.pprint(dict(env_var), width = 1)
+    pprint.pprint(dict(env_var), width=1)
 
     # Check if distributed training
     is_distributed = len(args.hosts) > 1 and args.backend is not None
@@ -346,6 +346,19 @@ if __name__ == '__main__':
 
     device = torch.device("cuda" if use_cuda else "cpu")
     # Initialize the distributed environment.
+
+    # You can think of world as a group containing all the processes for your distributed training. Usually,
+    # each GPU corresponds to one process. Processes in the world can communicate with each other, which is why you
+    # can train your model distributedly and still get the correct gradient update. So world size is the number of
+    # processes for your training, which is usually the number of GPUs you are using for distributed training.
+    #
+    # Rank is the unique ID given to a process, so that other processes know how to identify a particular process.
+    # Local rank is the a unique local ID for processes running in a single node, this is where my view differs with
+    # @zihaozhihao.
+    #
+    # Let's take a concrete example. Suppose we run our training in 2 servers (some articles also call them nodes)
+    # and each server/node has 4 GPUs. The world size is 4*2=8. The ranks for the processes will be [0, 1, 2, 3, 4,
+    # 5, 6, 7]. In each node, the local rank will be [0, 1, 2, 3].
 
     if is_distributed:
         world_size = len(args.hosts)
@@ -393,6 +406,7 @@ if __name__ == '__main__':
 
 
     # Create data loaders
+
     train_data_loader, df_train = create_data_loader(args.train_data_path, args.batch_size)
     val_data_loader, df_val = create_data_loader(args.validation_data_path, args.batch_size)
 
