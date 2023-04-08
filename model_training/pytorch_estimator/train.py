@@ -184,7 +184,7 @@ def configure_model():
             1: 0,
             2: 1
         },
-        label2id ={
+        label2id={
             -1: 0,
             0: 1,
             1: 2
